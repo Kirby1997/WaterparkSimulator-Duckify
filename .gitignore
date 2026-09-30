@@ -1,0 +1,15 @@
+bin/
+obj/
+dist/
+.vs/
+*.user
+
+# Per-machine override of the game profile location
+GamePaths.user.props
+
+# Local secrets (Thunderstore token)
+.env
+
+# Game data extracted at build time. Never commit it.
+art/ref/
+*.blend1
