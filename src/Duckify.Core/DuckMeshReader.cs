@@ -56,6 +56,19 @@ public static class DuckMeshReader
             var smoothness = r.ReadSingle();
             var indexCount = r.ReadUInt32();
             if (indexCount % 3 != 0) throw new DuckMeshFormatException($"Submesh {s} has {indexCount} indices, which is not a whole number of triangles.");
+
+            // Reject counts that cannot fit in the file before allocating
+            if (stream.CanSeek)
+            {
+                if (indexCount * 4L > stream.Length - stream.Position)
+                    throw new DuckMeshFormatException($"Submesh {s} claims {indexCount} indices, more than the file holds.");
+            }
+            else
+            {
+                if (indexCount > 3u * 1_000_000u * 20u)
+                    throw new DuckMeshFormatException($"Submesh {s} claims {indexCount} indices, more than the file holds.");
+            }
+
             var indices = new int[indexCount];
             for (var i = 0; i < indexCount; i++)
             {
@@ -93,7 +106,7 @@ public static class DuckMeshReader
                 throw new DuckMeshFormatException($"vertex {v} has weights adding up to {sum:0.###}, not 1.");
         }
 
-        if (stream.CanSeek ? stream.Position != stream.Length : r.PeekChar() != -1)
+        if (stream.ReadByte() != -1)
             throw new DuckMeshFormatException("The duck mesh file has extra bytes after the last vertex.");
 
         return new DuckMeshData(bones, positions, normals, boneIndices, weights, submeshes);

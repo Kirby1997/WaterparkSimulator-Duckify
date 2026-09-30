@@ -118,4 +118,61 @@ public class DuckMeshReaderTests
             new[] { new DuckSubmesh(new DuckColor(0, 0, 0, 255), 0, new[] { 0, 0, 0 }) });
         Assert.Throws<ArgumentException>(() => Bytes(bad));
     }
+
+    [Fact]
+    public void Rejects_a_submesh_that_claims_more_indices_than_the_file_holds()
+    {
+        var bytes = Bytes(Sample());
+        // Overwrite the submesh's indexCount with 0xFFFFFFFFu
+        // Format: header (16) + bones (1+6 + 1+4 = 12, ending at 28) + submesh (4 colour + 4 smoothness = 8, starting at 28)
+        // So indexCount (u32) sits at offset 36
+        BitConverter.GetBytes(0xFFFFFFFFu).CopyTo(bytes, 36);
+
+        var e = Assert.Throws<DuckMeshFormatException>(() => ReadBytes(bytes));
+        Assert.Contains("more than the file holds", e.Message);
+    }
+
+    [Fact]
+    public void Rejects_extra_bytes_on_a_stream_that_cannot_seek()
+    {
+        var bytes = Bytes(Sample()).Concat(new byte[] { 1, 2, 3 }).ToArray();
+        var stream = new NonSeekableStream(new MemoryStream(bytes));
+
+        var e = Assert.Throws<DuckMeshFormatException>(() => DuckMeshReader.Read(stream));
+        Assert.Contains("after the last vertex", e.Message);
+    }
+
+    [Fact]
+    public void Reads_a_valid_mesh_from_a_stream_that_cannot_seek()
+    {
+        var bytes = Bytes(Sample());
+        var stream = new NonSeekableStream(new MemoryStream(bytes));
+
+        var mesh = DuckMeshReader.Read(stream);
+        Assert.Equal(new[] { "pelvis", "head" }, mesh.Bones);
+    }
+
+    private class NonSeekableStream : Stream
+    {
+        private readonly MemoryStream _inner;
+
+        public NonSeekableStream(MemoryStream inner) => _inner = inner;
+
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException();
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush() { }
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override int ReadByte() => _inner.ReadByte();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
 }
