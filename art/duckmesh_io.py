@@ -5,6 +5,7 @@ u16 reserved; bones as u8 length + UTF-8; submeshes as RGBA8, f32 smoothness, u3
 indices; vertices as 6 f32 (position, normal), 4 u8 bone indices, 4 f32 weights.
 Must match src/Duckify.Core/DuckMeshReader.cs.
 """
+import math
 import struct
 
 VERSION = 1
@@ -14,11 +15,17 @@ def write(path, bones, positions, normals, bone_idx, weights, submeshes):
     n = len(positions)
     if not (len(normals) == len(bone_idx) == len(weights) == n):
         raise ValueError("positions, normals, bone_idx and weights need one entry per vertex")
+    if n == 0:
+        raise ValueError("a duck mesh needs at least one vertex")
+    if not submeshes:
+        raise ValueError("a duck mesh needs at least one submesh")
     if not 1 <= len(bones) <= 255:
         raise ValueError(f"a duck mesh needs 1 to 255 bones, not {len(bones)}")
     for v, (idx, w) in enumerate(zip(bone_idx, weights)):
-        if any(i >= len(bones) for i in idx):
-            raise ValueError(f"vertex {v} uses a bone past the bone table")
+        if any(i < 0 or i >= len(bones) for i in idx):
+            raise ValueError(f"vertex {v} uses a bone outside the bone table")
+        if any(math.isnan(x) or x < 0 for x in w):
+            raise ValueError(f"vertex {v} has a NaN or negative weight")
         if abs(sum(w) - 1.0) > 0.01:
             raise ValueError(f"vertex {v} has weights adding up to {sum(w):.3f}, not 1")
     out = bytearray(b"DUCK")
@@ -40,7 +47,8 @@ def write(path, bones, positions, normals, bone_idx, weights, submeshes):
 
 
 def read(path):
-    data = open(path, "rb").read()
+    with open(path, "rb") as f:
+        data = f.read()
     if data[:4] != b"DUCK":
         raise ValueError("not a duck mesh")
     version, bone_count, n, sub_count, _ = struct.unpack_from("<HHIHH", data, 4)

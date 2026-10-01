@@ -13,3 +13,4 @@ GamePaths.user.props
 # Game data extracted at build time. Never commit it.
 art/ref/
 *.blend1
+__pycache__/

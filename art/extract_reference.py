@@ -41,7 +41,7 @@ def find_mesh(env, mesh_name):
             mesh = o.read()
             if mesh.m_Name == mesh_name:
                 return mesh
-    raise SystemExit(f"No skinned renderer uses {mesh_name}; the game may have renamed it.")
+    raise SystemExit(f"No mesh named {mesh_name}; the game may have renamed it.")
 
 
 def export(env, mesh_name, bones_from):
@@ -49,13 +49,17 @@ def export(env, mesh_name, bones_from):
     mesh = bone_mesh if mesh_name == bones_from else find_mesh(env, mesh_name)
     h = MeshHandler(mesh)
     h.process()
+    if len(mesh.m_BindPose) != len(smr.m_Bones):
+        raise SystemExit(f"{mesh.m_Name} has {len(mesh.m_BindPose)} bind poses but the renderer "
+                         f"has {len(smr.m_Bones)} bones.")
     transforms = [b.read() for b in smr.m_Bones]
     names = [t.m_GameObject.read().m_Name for t in transforms]
     by_id = {b.path_id: n for b, n in zip(smr.m_Bones, names)}
     parents = {n: by_id.get(t.m_Father.path_id) for n, t in zip(names, transforms)}
     bind = [[[m.e00, m.e01, m.e02, m.e03], [m.e10, m.e11, m.e12, m.e13],
              [m.e20, m.e21, m.e22, m.e23], [m.e30, m.e31, m.e32, m.e33]] for m in mesh.m_BindPose]
-    tris = [h.get_triangles()[i] for i in range(len(mesh.m_SubMeshes))]
+    all_tris = h.get_triangles()
+    tris = [all_tris[i] for i in range(len(mesh.m_SubMeshes))]
     return dict(name=mesh.m_Name, verts=h.m_Vertices, normals=h.m_Normals, tris=tris,
                 weights=h.m_BoneWeights, bidx=h.m_BoneIndices, bones=names, bind=bind, parents=parents)
 
@@ -69,7 +73,9 @@ def main():
     os.makedirs(args.out, exist_ok=True)
     envs = {}
     for tag, (asset, mesh_name, bones_from) in WANT.items():
-        env = envs.setdefault(asset, UnityPy.load(os.path.join(data_dir, asset)))
+        if asset not in envs:
+            envs[asset] = UnityPy.load(os.path.join(data_dir, asset))
+        env = envs[asset]
         d = export(env, mesh_name, bones_from)
         with open(os.path.join(args.out, tag + ".json"), "w") as f:
             json.dump(d, f)

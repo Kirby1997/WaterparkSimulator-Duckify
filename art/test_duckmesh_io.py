@@ -46,6 +46,26 @@ class DuckMeshIoTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 duckmesh_io.write(os.path.join(d, "t.duckmesh"), **bad)
 
+    def assert_refused(self, bad):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(ValueError):
+                duckmesh_io.write(os.path.join(d, "t.duckmesh"), **bad)
+
+    def test_refuses_nan_weight(self):
+        bad = self.sample()
+        bad["weights"][1] = (float("nan"), 0, 0, 0)
+        self.assert_refused(bad)
+
+    def test_refuses_negative_weight(self):
+        bad = self.sample()
+        bad["weights"][1] = (1.5, -0.5, 0, 0)
+        self.assert_refused(bad)
+
+    def test_refuses_zero_submeshes(self):
+        bad = self.sample()
+        bad["submeshes"] = []
+        self.assert_refused(bad)
+
 
 if __name__ == "__main__":
     unittest.main()
