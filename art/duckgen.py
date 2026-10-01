@@ -12,7 +12,9 @@ def mat(name,hexc,rough=0.6):
     if m: return m
     m=bpy.data.materials.new(name); m.use_nodes=True
     b=m.node_tree.nodes['Principled BSDF']; b.inputs['Base Color'].default_value=(*srgb(hexc),1); b.inputs['Roughness'].default_value=rough
-    m.diffuse_color=(*srgb(hexc),1); return m
+    m.diffuse_color=(*srgb(hexc),1)
+    m['hex']=hexc; m['smoothness']=round(1.0-rough,3)
+    return m
 
 class Part:
     """collects primitives into one bmesh, then fuses them with a voxel remesh"""
@@ -50,6 +52,26 @@ class Part:
         for p in me2.polygons: p.use_smooth=True
         return ob
 
+def paint_bands(ob,top,bottom,bands):
+    """Give the faces of ob between planes across the top->bottom axis, and within a radius of it,
+    their own material. bands: (start, end, material, radius), start and end as fractions along
+    the axis; None means unbounded."""
+    axis=(bottom-top); L=axis.length; n=axis/L
+    bm=bmesh.new(); bm.from_mesh(ob.data)
+    for t in sorted({t for a,b,_,_ in bands for t in (a,b) if t is not None}):
+        geom=bm.verts[:]+bm.edges[:]+bm.faces[:]
+        bmesh.ops.bisect_plane(bm,geom=geom,plane_co=top+n*(L*t),plane_no=n)
+    for a,b,m,_ in bands:
+        if m.name not in ob.data.materials: ob.data.materials.append(m)
+    idx={m.name:i for i,m in enumerate(ob.data.materials)}
+    for f in bm.faces:
+        d=f.calc_center_median()-top; t=d.dot(n)/L; r=(d-n*d.dot(n)).length
+        for a,b,m,rmax in bands:
+            if (a is None or t>=a) and (b is None or t<b) and r<rmax:
+                f.material_index=idx[m.name]; break
+    bm.to_mesh(ob.data); bm.free()
+    for p in ob.data.polygons: p.use_smooth=True
+
 def bone_pts(arm):
     return {b.name:(arm.matrix_world@b.head_local, arm.matrix_world@b.tail_local) for b in arm.data.bones}
 
@@ -59,13 +81,14 @@ STYLES={
  'rubber': dict(body='ffd21f',bill='ff7a1a',feet='ff7a1a',chub=1.25,head=1.2,neck=-0.04,shiny=True),
 }
 
-def build_duck(style,arm,budget=None):
+def build_duck(style,arm):
     S=STYLES[style]; P=bone_pts(arm); H=lambda n:P[n][0]; T=lambda n:P[n][1]
     rough=0.3 if S.get('shiny') else 0.65
     M={k:mat(f'{style}_{k}',v,rough) for k,v in S.items() if isinstance(v,str)}
     ch=S['chub']; hs=S['head']
     pelvis,sp2,sp4,neck,head=H('pelvis'),H('spine_02'),H('spine_04'),H('neck_01'),H('head')
     out=[]
+    limbs=[]  # (kind, a, b, r1, r2): capsules around the duck's own arms and thighs, for rigging
     body=Part(style+'_body')
     # pear torso: bottom bulb around hips, top toward chest
     body.ell(pelvis+UP*0.04+FWD*0.03,(0.25*ch,0.22*ch,0.26*ch))
@@ -88,37 +111,37 @@ def build_duck(style,arm,budget=None):
     # thighs: feather puffs so the body reads as one
     for s in 'lr':
         th,ca=H('thigh_'+s),H('calf_'+s)
-        body.cap(th,th.lerp(ca,0.55),0.1*ch,0.075*ch)
+        body.cap(th,th.lerp(ca,0.55),0.1*ch,0.075*ch); limbs.append(('leg',th,th.lerp(ca,0.55),0.1*ch,0.075*ch))
     # wings: arms with feather fingers
     for s in 'lr':
         cl,ua,la,hd=H('clavicle_'+s),H('upperarm_'+s),H('lowerarm_'+s),H('hand_'+s)
-        body.cap(ua.lerp(cl,0.3),la,0.085*ch,0.065*ch)
-        body.cap(la,hd,0.065*ch,0.05*ch)
+        body.cap(ua.lerp(cl,0.3),la,0.085*ch,0.065*ch); limbs.append(('arm',ua,la,0.085*ch,0.065*ch))  # from the shoulder joint: nearer the neck is torso
+        body.cap(la,hd,0.065*ch,0.05*ch); limbs.append(('arm',la,hd,0.065*ch,0.05*ch))
         spread=(H('index_01_'+s)-H('pinky_01_'+s)).normalized()
         fdir=(T('middle_03_'+s)-hd).normalized()
         nrm=fdir.cross(spread).normalized()
         # wing tip: broad paddle + three long primaries that follow the finger bones
         tipc=hd+fdir*0.1
-        body.feather(la.lerp(hd,0.5),tipc,0.065*ch,0.06,nrm,0.42)
+        body.feather(la.lerp(hd,0.5),tipc,0.065*ch,0.06,nrm,0.42); limbs.append(('arm',la.lerp(hd,0.5),tipc,0.065*ch,0.06))
         for f,w in (('index',1.0),('middle',1.12),('pinky',0.9)):
             a,b=H(f'{f}_01_{s}'),T(f'{f}_03_{s}')
             d=(b-a).normalized()
-            body.feather(hd.lerp(a,0.5),a+d*0.17*w,0.042,0.02,nrm,0.36)
+            body.feather(hd.lerp(a,0.5),a+d*0.17*w,0.042,0.02,nrm,0.36); limbs.append(('arm',hd.lerp(a,0.5),a+d*0.17*w,0.042,0.02))
         tb=T('thumb_03_'+s); ta=H('thumb_01_'+s)
-        body.feather(ta,ta+(tb-ta).normalized()*0.1,0.03,0.015,nrm,0.4)
-    if not style=='mallard' or True:
-        out.append(body.build(M['body'],target=1900))
+        body.feather(ta,ta+(tb-ta).normalized()*0.1,0.03,0.015,nrm,0.4); limbs.append(('arm',ta,ta+(tb-ta).normalized()*0.1,0.03,0.015))
+    body_ob=body.build(M['body'],target=1900); body_ob['part']='body'; out.append(body_ob)
     if 'chest' in S:
         c=Part(style+'_chest'); c.ell(sp4+FWD*(0.11*ch)-UP*0.02,(0.16*ch,0.1*ch,0.14*ch)); out.append(c.build(M['chest'],target=160))
     if 'hood' in S:
-        h=Part(style+'_hood'); h.ell(hc+UP*0.004,hr*1.035); h.cap(hc,hc.lerp(sp4,0.4),0.108*hs,0.104*hs); out.append(h.build(M['hood'],target=260))
-        r=Part(style+'_ring'); nr=0.1*hs+ (0.11*ch-0.1*hs)*0.45; r.cap(hc.lerp(sp4,0.42),hc.lerp(sp4,0.48),nr+0.012,nr+0.014); out.append(r.build(M['ring'],voxel=0.008,target=70))
+        # Painted onto the body mesh, cut along clean planes across the neck. Separate shells
+        # over the neck intersect it at a shallow angle and show saw-tooth edges.
+        paint_bands(body_ob,hc,sp4,[(None,0.28,M['hood'],hr.x*1.3),(0.28,0.36,M['ring'],0.16*ch)])
     # bill: wide, flat, rounded
     bill=Part(style+'_bill')
     bc=hc+FWD*hr.y*0.92-UP*hr.z*0.15
     bill.ell(bc+FWD*0.05,(0.085*hs,0.1*hs,0.035*hs),Quaternion(X,math.radians(-8)))
     bill.ell(bc+FWD*0.035-UP*0.035*hs,(0.07*hs,0.085*hs,0.025*hs),Quaternion(X,math.radians(5)))
-    out.append(bill.build(M['bill'],voxel=0.006,smooth=4,target=180))
+    bill_ob=bill.build(M['bill'],voxel=0.006,smooth=4,target=180); bill_ob['rig']='head'; out.append(bill_ob)
     # legs + webbed feet
     feet=Part(style+'_feet')
     for s in 'lr':
@@ -134,15 +157,15 @@ def build_duck(style,arm,budget=None):
         # web between toes
         tipc=heel+fdir*0.18
         feet.ell(tipc,(0.1,0.06,0.016),fdir.to_track_quat('Y','Z'))
-    out.append(feet.build(M['feet'],voxel=0.008,smooth=4,target=520))
+    feet_ob=feet.build(M['feet'],voxel=0.008,smooth=4,target=520); feet_ob['rig']='legs'; out.append(feet_ob)
     # eyes
     ew=mat('eye_white','ffffff',0.15); eb=mat('eye_black','0f1216',0.1)
     for sx in (-1,1):
         side=X*sx
         ep=hc+side*hr.x*0.5+FWD*hr.y*0.72+UP*hr.z*0.3
         e=Part(style+'_eyeW'); e.ell(ep,(0.055*hs,0.035*hs,0.065*hs),Quaternion(UP,math.radians(20*sx)))
-        out.append(e.build(ew,voxel=0.004,smooth=2,target=48))
+        eo=e.build(ew,voxel=0.004,smooth=2,target=48); eo['rig']='head'; out.append(eo)
         pp=ep+FWD*0.03*hs+side*0.004+UP*0.006
         p=Part(style+'_pupil'); p.ell(pp,(0.026*hs,0.012*hs,0.032*hs),Quaternion(UP,math.radians(20*sx)))
-        out.append(p.build(eb,voxel=0.003,smooth=1,target=28))
-    return out
+        po=p.build(eb,voxel=0.003,smooth=1,target=28); po['rig']='head'; out.append(po)
+    return out, dict(head_center=hc.copy(), head_radius=hr.copy(), limbs=limbs)
