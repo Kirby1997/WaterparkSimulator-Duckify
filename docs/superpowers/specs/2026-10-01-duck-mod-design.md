@@ -147,7 +147,7 @@ interop signatures:
 - Live config: every refresh reads the current config values, so a change reaches every tracked
   character within a few frames. No `SettingChanged` handler is needed.
 
-### Config (`BepInEx/config/<guid>.cfg`, editable in game with ModManager)
+### Config (`BepInEx/config/<guid>.cfg`, editable in game with ModSettings)
 
 | Section | Key | Type | Default | Meaning |
 |---|---|---|---|---|
