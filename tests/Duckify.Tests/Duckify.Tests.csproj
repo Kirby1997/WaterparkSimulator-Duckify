@@ -23,9 +23,4 @@
     <ProjectReference Include="..\..\src\Duckify.Core\Duckify.Core.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- The shipped ducks, checked by ArtFilesTests. -->
-    <None Include="..\..\art\out\*.duckmesh" Link="art\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
 </Project>

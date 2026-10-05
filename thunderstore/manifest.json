@@ -2,7 +2,7 @@
   "name": "Duckify",
   "version_number": "0.1.0",
   "website_url": "https://github.com/Kirby1997/WaterparkSimulator-Duckify",
-  "description": "Turns every guest, staff member and player into a duck, including your own first-person wings.",
+  "description": "Dresses every park visitor in the duck suit your mascot staff wear.",
   "dependencies": [
     "BepInEx-BepInExPack_IL2CPP-6.0.755"
   ]

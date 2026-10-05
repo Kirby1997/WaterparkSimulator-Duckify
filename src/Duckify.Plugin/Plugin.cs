@@ -1,7 +1,7 @@
 using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Unity.IL2CPP;
-using Duckify.Core;
+using HarmonyLib;
 
 namespace Duckify.Plugin;
 
@@ -17,21 +17,29 @@ public sealed class Plugin : BasePlugin
     internal static Plugin Instance { get; private set; }
 
     internal ConfigEntry<bool> Enabled { get; private set; }
-    internal ConfigEntry<DuckStyle> Style { get; private set; }
-    internal ConfigEntry<bool> ShowClothes { get; private set; }
 
     public override void Load()
     {
         Instance = this;
         Enabled = Config.Bind("General", "Enabled", true,
-            "Draw every character as a duck. Turn off to see the game's humans again.");
-        Style = Config.Bind("General", "DuckStyle", DuckStyle.Random,
-            "Which duck to draw. Random gives each character a duck picked from their name, so they keep it across reloads.");
-        ShowClothes = Config.Bind("General", "ShowClothes", false,
-            "Draw the game's clothes over the ducks. Hats, glasses and shoes fit; shirts and trousers are made for a " +
-            "human body and clip into or through the duck.");
+            "Dress every visitor in the park mascot's duck suit. Turn off to give them their own clothes back; " +
+            "the change shows at once.");
+        Enabled.SettingChanged += OnEnabledChanged;
 
+        new Harmony(Id).PatchAll(typeof(SuitHooks));
         Log.LogInfo($"{Name} {Version} loaded");
+    }
+
+    private void OnEnabledChanged(object sender, EventArgs args)
+    {
+        try
+        {
+            SuitHooks.RedressVisitors();
+        }
+        catch (Exception e)
+        {
+            ReportOnce("redressing visitors", e);
+        }
     }
 
     internal void ReportOnce(string what, Exception e)

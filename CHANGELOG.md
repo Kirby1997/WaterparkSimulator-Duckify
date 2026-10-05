@@ -2,5 +2,6 @@
 
 ## 0.1.0
 
-- First release: every visitor, staff member, mascot and player is drawn as a duck (Classic, Mallard or Rubber), including your own first-person wings.
-- Config: `DuckStyle` (Random by default), `ShowClothes`, `Enabled`. All apply while the game runs.
+- First release: every park visitor wears the duck suit the mascot staff wear (head, body suit and shoes), in the male or female cut to match them.
+- Only your screen changes. Saves and other players keep the visitors' own clothes.
+- Config: `Enabled`, which applies at once.
